@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import "./App.css";
+import { useState, useRef, useEffect } from "react";
+
 
 const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
 
@@ -7,13 +7,29 @@ const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
 function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const copyToClipboard = () => {
+  if (!transcript) return;
+  navigator.clipboard.writeText(transcript);
+  alert("Transcript copied to clipboard");
+};
+
 
   const socketRef = useRef(null);
   const audioContextRef = useRef(null);
   const processorRef = useRef(null);
   const inputRef = useRef(null);
+  const audioBufferQueue = useRef([]); // <-- ADD THIS LINE
+  const recordingStartTimeRef = useRef(0);
+  const MIN_RECORDING_MS = 180;
+
+
+
 
   const startRecording = async () => {
+    setTranscript("");
+    recordingStartTimeRef.current = Date.now();
+
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -22,6 +38,32 @@ function App() {
 
       const source = audioContext.createMediaStreamSource(stream);
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (event) => {
+  const inputData = event.inputBuffer.getChannelData(0);
+
+  // DEBUG LOG
+  console.log("Audio chunk size:", inputData.length);
+
+  const buffer = new Int16Array(inputData.length);
+  for (let i = 0; i < inputData.length; i++) {
+    buffer[i] = inputData[i] * 32767;
+  }
+
+  if (
+  socketRef.current &&
+  socketRef.current.readyState === WebSocket.OPEN
+) {
+  socketRef.current.send(buffer);
+} else {
+  // 🔥 Buffer audio until socket connects
+  audioBufferQueue.current.push(buffer);
+}
+
+
+};
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
 
       processorRef.current = processor;
       inputRef.current = source;
@@ -43,25 +85,13 @@ function App() {
       socket.onopen = () => {
         console.log("Deepgram connected");
 
-        processor.onaudioprocess = (event) => {
-  const inputData = event.inputBuffer.getChannelData(0);
+        // 🔥 Send buffered audio first
+  audioBufferQueue.current.forEach((chunk) => {
+    socket.send(chunk);
+  });
 
-  // DEBUG LOG
-  console.log("Audio chunk size:", inputData.length);
-
-  const buffer = new Int16Array(inputData.length);
-  for (let i = 0; i < inputData.length; i++) {
-    buffer[i] = inputData[i] * 32767;
-  }
-
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send(buffer);
-  }
-};
-
-
-        source.connect(processor);
-        processor.connect(audioContext.destination);
+  // Clear buffer after flush
+  audioBufferQueue.current = [];
       };
 
       socket.onmessage = (message) => {
@@ -108,41 +138,107 @@ socket.onclose = (event) => {
 
 
   const stopRecording = () => {
-  setIsRecording(false);
+  const elapsed =
+    Date.now() - recordingStartTimeRef.current;
 
-  processorRef.current?.disconnect();
-  inputRef.current?.disconnect();
-  audioContextRef.current?.close();
+  // 🛑 If recording was too short, wait a bit
+  const delay =
+    elapsed < MIN_RECORDING_MS
+      ? MIN_RECORDING_MS - elapsed
+      : 0;
 
-  // ⏳ IMPORTANT: allow Deepgram time to send final transcript
   setTimeout(() => {
-    socketRef.current?.close();
-    console.log("Deepgram socket closed after delay");
-  }, 1000); // 1 second delay
+    setIsRecording(false);
 
-  console.log("Recording stopped");
+    processorRef.current?.disconnect();
+    inputRef.current?.disconnect();
+    audioContextRef.current?.close();
+
+    // ✅ Proper Deepgram finalize
+    if (
+      socketRef.current &&
+      socketRef.current.readyState === WebSocket.OPEN
+    ) {
+      socketRef.current.send(
+        JSON.stringify({ type: "CloseStream" })
+      );
+    }
+
+    // Allow final transcript to arrive
+    setTimeout(() => {
+      socketRef.current?.close();
+    }, 350);
+
+    audioBufferQueue.current = [];
+  }, delay);
 };
 
 
+
+useEffect(() => {
+  const handleKeyDown = (e) => {
+    if (e.code === "Space" && !isRecording) {
+      startRecording();
+    }
+  };
+
+  const handleKeyUp = (e) => {
+    if (e.code === "Space") {
+      stopRecording();
+    }
+  };
+
+  window.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("keyup", handleKeyUp);
+
+  return () => {
+    window.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("keyup", handleKeyUp);
+  };
+}, [isRecording]);
+
   return (
-    <div className="container">
+  <div className="app">
+    <div className="card">
       <h1>Wispr Flow Lite</h1>
 
-      <button
-        className={isRecording ? "recording" : ""}
-        onMouseDown={startRecording}
-        onMouseUp={stopRecording}
-      >
-        {isRecording ? "Recording..." : "Hold to Talk"}
-      </button>
+      <div className="tooltip-wrapper">
+  <button
+    className={isRecording ? "recording" : ""}
+    onMouseDown={startRecording}
+    onMouseUp={stopRecording}
+  >
+    {isRecording ? "Recording..." : "Hold to Talk"}
+  </button>
+  <span className="tooltip">Hold Spacebar to talk</span>
+</div>
+
+{isRecording && (
+  <div className="waveform">
+    <span></span>
+    <span></span>
+    <span></span>
+    <span></span>
+    <span></span>
+  </div>
+)}
+
 
       <textarea
-        placeholder="Speak and see text appear..."
         value={transcript}
         readOnly
+        placeholder="Your speech will appear here..."
       />
+
+      <button onClick={copyToClipboard}>
+        Copy Transcript
+      </button>
     </div>
-  );
+  </div>
+);
+
+
+
 }
 
 export default App;
