@@ -72,6 +72,16 @@ textarea {
 }
 
 
+textarea:read-only {
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+textarea:not(:read-only) {
+  cursor: text;
+}
+
+
 
 button.recording {
   background: linear-gradient(135deg, #ff416c, #ff4b2b) !important;
@@ -112,11 +122,19 @@ button.recording {
   pointer-events: none;
   transition: opacity 0.2s ease;
   white-space: nowrap;
+
+  opacity: 1;
+  animation: tooltipFadeOut 2.5s ease forwards;
+  animation-delay: 1.5s;
+}
+/* Tooltip fades away smoothly */
+@keyframes tooltipFadeOut {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
 }
 
-.tooltip-wrapper:hover .tooltip {
-  opacity: 1;
-}
 
 .waveform {
   display: flex;

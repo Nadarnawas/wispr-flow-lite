@@ -6,12 +6,15 @@ const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
 
 function App() {
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState("");
+const [finalTranscript, setFinalTranscript] = useState("");
+const [interimTranscript, setInterimTranscript] = useState("");
+
   const copyToClipboard = () => {
-  if (!transcript) return;
-  navigator.clipboard.writeText(transcript);
+  if (!finalTranscript) return;
+  navigator.clipboard.writeText(finalTranscript.trim());
   alert("Transcript copied to clipboard");
 };
+
 
 
   const socketRef = useRef(null);
@@ -26,7 +29,9 @@ function App() {
 
 
   const startRecording = async () => {
-    setTranscript("");
+    setFinalTranscript("");
+setInterimTranscript("");
+
     recordingStartTimeRef.current = Date.now();
 
 
@@ -37,7 +42,7 @@ function App() {
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const processor = audioContext.createScriptProcessor(2048, 1, 1);
       processor.onaudioprocess = (event) => {
   const inputData = event.inputBuffer.getChannelData(0);
 
@@ -106,10 +111,15 @@ function App() {
   if (!transcriptText) return;
 
   if (isFinal) {
-    // Append only FINAL transcript
-    setTranscript((prev) => prev + " " + transcriptText);
+    // ✅ Commit final text
+    setFinalTranscript((prev) => prev + " " + transcriptText);
+    setInterimTranscript(""); // clear interim
+  } else {
+    // ✏️ Show live interim text
+    setInterimTranscript(transcriptText);
   }
 };
+
 
 
      socket.onerror = (event) => {
@@ -171,6 +181,8 @@ socket.onclose = (event) => {
 
     audioBufferQueue.current = [];
   }, delay);
+  setInterimTranscript("");
+
 };
 
 
@@ -224,11 +236,19 @@ useEffect(() => {
 )}
 
 
-      <textarea
-        value={transcript}
-        readOnly
-        placeholder="Your speech will appear here..."
-      />
+    <textarea
+  value={isRecording ? `${finalTranscript} ${interimTranscript}` : finalTranscript}
+  readOnly={isRecording}
+  onChange={(e) => {
+    if (!isRecording) {
+      setFinalTranscript(e.target.value);
+    }
+  }}
+  placeholder="Your speech will appear here..."
+/>
+
+
+
 
       <button onClick={copyToClipboard}>
         Copy Transcript
