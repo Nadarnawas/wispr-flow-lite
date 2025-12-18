@@ -156,7 +156,9 @@ VITE_DEEPGRAM_API_KEY=your_deepgram_api_key_here
 ## ▶️ Run the Application (Development)
 
 ```bash
-npm run tauri dev
+npm run dev (Web page view)
+OR
+npx tauri dev (Web Application view)
 ```
 
 ---

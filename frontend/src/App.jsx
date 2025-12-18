@@ -189,16 +189,29 @@ socket.onclose = (event) => {
 
 useEffect(() => {
   const handleKeyDown = (e) => {
-    if (e.code === "Space" && !isRecording) {
-      startRecording();
-    }
-  };
+  const active = document.activeElement;
+
+  // If editing textarea, DO NOT trigger recording
+  if (active && active.tagName === "TEXTAREA") return;
+
+  if (e.code === "Space" && !isRecording) {
+    e.preventDefault(); // prevent page scroll
+    startRecording();
+  }
+};
+
 
   const handleKeyUp = (e) => {
-    if (e.code === "Space") {
-      stopRecording();
-    }
-  };
+  const active = document.activeElement;
+
+  // If editing textarea, DO NOT stop recording unnecessarily
+  if (active && active.tagName === "TEXTAREA") return;
+
+  if (e.code === "Space") {
+    stopRecording();
+  }
+};
+
 
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
