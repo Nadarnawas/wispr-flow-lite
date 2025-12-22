@@ -1,196 +1,197 @@
-## 🧠 Wispr Flow Lite — Voice-to-Text Desktop App
+# 🎙️ Wispr Flow Lite
 
-A lightweight, cross-platform **AI-powered voice-to-text desktop application** built with **Tauri**, **React**, and **Deepgram**, inspired by the core workflow of **Wispr Flow**.
+**AI-Powered Push-to-Talk Voice-to-Text Desktop Application**
 
-This project focuses on **real-time speech transcription**, **streaming reliability**, and **practical user experience**, rather than pixel-perfect UI replication.
-
----
-
-## 🚀 Project Overview
-
-Wispr Flow Lite allows users to **press and hold a button (or spacebar), speak, and see their speech converted into text**.
-
-The application provides:
-
-* **Live (interim) transcription** while speaking
-* **Accurate final transcription** after pauses or recording stops
-* **Editable final transcript** for manual correction
-
-The goal of this project is to demonstrate **real-world AI-powered desktop application development**, including audio streaming, WebSocket-based transcription, and careful handling of edge cases.
+Built using **Tauri**, **React**, and **Deepgram**
 
 ---
 
-## 🛠️ Tech Stack
+## 🚀 Overview
 
-### Desktop Framework
+**Wispr Flow Lite** is a lightweight, cross-platform **desktop application** that converts speech into text using a **push-to-talk workflow**.
 
-* **Tauri** — lightweight, secure, cross-platform desktop framework
-  (Windows, macOS, Linux)
+Inspired by the core experience of **Wispr Flow**, this project focuses on:
 
-### Frontend
+* real-time audio streaming
+* low-latency AI transcription
+* reliable short-utterance handling
+* clean desktop-first architecture
 
-* **React (Vite)** — UI and state management
-* **CSS** — custom layout, animations, and visual feedback
-
-### Speech Recognition
-
-* **Deepgram Real-Time WebSocket API**
-
-  * Model: `nova-2`
-  * Near real-time speech-to-text transcription
+The emphasis is on **engineering quality and real-world reliability**, not pixel-perfect UI replication.
 
 ---
 
-## ✨ Core Features
+## ✨ Key Features
 
-### 🎙️ Push-to-Talk Voice Input
-
-* Hold the **record button** or **spacebar** to start recording
-* Release to stop recording and finalize transcription
-
----
-
-### ⚡ Live Interim Transcription
-
-* Text appears **while the user is speaking**
-* Provides immediate feedback during long sentences
-* Interim text is temporary and not permanently committed
+* 🎙️ Push-to-talk via mouse or Spacebar
+* ⚡ Live interim transcription
+* ✅ Accurate final transcription
+* ✍️ Editable transcript after recording
+* 🧠 Audio buffering for short presses (~140–200ms)
+* 🎨 Waveform + recording pulse animation
+* 📋 Copy final transcript to clipboard
+* ⌨️ Spacebar disabled while editing text
+* 🖥️ Native Windows desktop installers
 
 ---
 
-### ✅ Accurate Final Transcription
+## 🧠 Tech Stack
 
-* Interim text is replaced by **final, stable transcription**
-* Final text is committed only when Deepgram confirms confidence
-* Prevents duplication, flicker, and unstable output
-
----
-
-### ✍️ Editable Final Transcript
-
-* Transcript becomes **editable after recording stops**
-* Allows users to correct or refine AI-generated text
-* Editing is disabled while recording to avoid conflicts
-* Cursor-safe controlled input handling (no cursor jumping)
+| Layer              | Technology             |
+| ------------------ | ---------------------- |
+| Desktop Runtime    | Tauri (Rust + WebView) |
+| Frontend           | React + Vite           |
+| Audio              | Web Audio API          |
+| Speech Recognition | Deepgram Streaming API |
+| Packaging          | NSIS / MSI             |
 
 ---
 
-### 🧠 Streaming Reliability
+## 🏗️ Project Architecture
 
-* Audio buffering during WebSocket connection setup prevents first-word clipping
-* Explicit stream finalization ensures short utterances are transcribed correctly
-* Minimum recording duration avoids dropped single-word inputs
-
----
-
-### 🖥️ Clean & Polished UI
-
-* Dark gradient background with glass-style card layout
-* Recording pulse animation
-* Live waveform animation during recording
-* One-time tooltip hint that fades automatically for unobtrusive onboarding
-
----
-
-### 📋 Copy to Clipboard
-
-* One-click copy of **final transcript only**
-* Interim text is excluded to maintain accuracy
+```
+User Voice
+   ↓
+Microphone (Web Audio API)
+   ↓
+Audio Processing (16-bit PCM)
+   ↓
+Deepgram WebSocket (Streaming)
+   ↓
+Interim / Final Transcription
+   ↓
+React UI (Desktop via Tauri)
+```
 
 ---
 
-## 🧩 Architecture Overview
+## 🖥️ Installation (Windows)
 
-The application follows a **clear separation of concerns**:
+Download the installer from GitHub Releases:
 
-### UI Layer (React)
+👉 **[https://github.com/Nadarnawas/wispr-flow-lite/releases/latest]
 
-* Handles user interaction and visual feedback
-* Displays interim and final transcription
-* Manages recording and editing state
+Available Installers
 
-### Audio Layer (Web Audio API)
+    .exe — Standard Windows installer (recommended)
 
-* Captures microphone input
-* Converts audio to 16-bit PCM format
-* Streams audio efficiently in small chunks
+    .msi — Enterprise installer
 
-### Transcription Layer (Deepgram WebSocket)
+Install Steps
 
-* Manages WebSocket lifecycle
-* Buffers audio during connection handshake
-* Emits interim and final transcription results
-* Explicitly finalizes streams to ensure reliability
+1. Download the installer
 
-This structure keeps the codebase **maintainable, understandable, and extensible**.
+2. Run the setup file
+
+3. Follow the wizard
+
+4. Launch Wispr Flow Lite from Start Menu
+
+Node.js and Rust are not required to run the installed application.
 
 ---
 
-## 🔐 Environment Setup
+## 🛠️ Development Setup
 
-### 1️⃣ Clone the Repository
+### Prerequisites
+
+* Node.js ≥ 18
+* Rust toolchain
+* Visual Studio Build Tools (Windows)
+
+---
+
+### Clone Repository
 
 ```bash
-git clone https://github.com/<your-username>/wispr-flow-lite.git
+git clone https://github.com/Nadarnawas/wispr-flow-lite
 cd wispr-flow-lite
 ```
 
-### 2️⃣ Install Dependencies
+---
+
+### Frontend Setup (Required)
+
+📍 **Run inside `frontend/`**
 
 ```bash
+cd frontend
 npm install
 ```
 
-### 3️⃣ Configure Environment Variables
-
-Create a `.env` file in the project root:
+Create `.env` inside `frontend/`:
 
 ```env
-VITE_DEEPGRAM_API_KEY=your_deepgram_api_key_here
+VITE_DEEPGRAM_API_KEY=your_deepgram_api_key
 ```
-
-> ⚠️ The `.env` file is included in `.gitignore` and should never be committed.
 
 ---
 
-## ▶️ Run the Application (Development)
+## ▶️ Run Frontend Only (Web – Development)
+
+📍 **Run inside `frontend/`**
 
 ```bash
-npm run dev (Web page view)
-OR
-npx tauri dev (Desktop Application view)
+npm run dev
+```
+
+* Opens the app in browser at `http://localhost:5173`
+* Used for UI and logic debugging
+* **Not the final desktop experience**
+
+---
+
+## ▶️ Run Desktop App (Development)
+
+📍 **Run from project root**
+
+```bash
+cd ..
+npx tauri dev
+```
+
+* Launches the full desktop application
+* This is the **primary evaluation mode**
+
+---
+
+## 📦 Build Production Desktop App
+
+📍 **Run from project root**
+
+```bash
+npx tauri build
+```
+
+Installers generated at:
+
+```
+src-tauri/target/release/bundle/
 ```
 
 ---
 
 ## 🧪 Error Handling
 
-* User-friendly alerts for microphone permission failures
-* Graceful handling of Deepgram WebSocket errors
-* Defensive parsing of transcription messages
-* Clean shutdown of audio and network resources to prevent crashes
+* Microphone permission failures handled gracefully
+* Deepgram WebSocket errors handled defensively
+* Clean shutdown of audio + network resources
 
 ---
 
 ## 📌 Known Limitations
 
-* Currently configured for **English (`en-US`) transcription**
-
-  * Multi-language support can be added by dynamically changing Deepgram parameters
-* Uses `ScriptProcessorNode` (deprecated but stable)
-
-  * Can be migrated to `AudioWorkletNode` for lower latency in a production version
-* Interim transcription prioritizes clarity over illusion-level typing speed
+* English (`en-US`) only
+* Cloud-based transcription (internet required)
+* Uses `ScriptProcessorNode` (stable but deprecated)
 
 ---
 
-## 🧠 What This Project Demonstrates
+## 🧩 CI / GitHub Workflows
 
-* Real-time audio streaming
-* AI-powered speech recognition integration
-* Desktop application development with Tauri
-* Practical handling of real-world edge cases
-* Thoughtful tradeoffs between speed, accuracy, and UX
+A minimal CI workflow is included to verify frontend builds.
+
+Desktop installers are built locally and published via **GitHub Releases**.
 
 ---
 
@@ -198,4 +199,10 @@ npx tauri dev (Desktop Application view)
 
 **Nadar Nawas**
 BTech Computer Science
-Voice-to-Text Desktop Application Project
+
+---
+
+## 🏁 Final Notes
+
+This project is **desktop-first**.
+The web run mode exists **only for development convenience**.
