@@ -1,71 +1,64 @@
 import { useState, useRef, useEffect } from "react";
 
-
 const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
 
+const GRACE_CAPTURE_MS = 200;  // continue recording briefly after release
+const MIN_RECORDING_MS = 140;  // optimized short press threshold
 
 function App() {
   const [isRecording, setIsRecording] = useState(false);
-const [finalTranscript, setFinalTranscript] = useState("");
-const [interimTranscript, setInterimTranscript] = useState("");
-
-  const copyToClipboard = () => {
-  if (!finalTranscript) return;
-  navigator.clipboard.writeText(finalTranscript.trim());
-  alert("Transcript copied to clipboard");
-};
-
-
+  const [finalTranscript, setFinalTranscript] = useState("");
+  const [interimTranscript, setInterimTranscript] = useState("");
 
   const socketRef = useRef(null);
   const audioContextRef = useRef(null);
   const processorRef = useRef(null);
   const inputRef = useRef(null);
-  const audioBufferQueue = useRef([]); // <-- ADD THIS LINE
+
+  const audioBufferQueue = useRef([]);
+  const finalReceivedRef = useRef(false);
   const recordingStartTimeRef = useRef(0);
-  const MIN_RECORDING_MS = 180;
 
-
-
+  const copyToClipboard = () => {
+    const combined = `${finalTranscript} ${interimTranscript}`.trim();
+    if (!combined) return;
+    navigator.clipboard.writeText(combined);
+    alert("Transcript copied to clipboard");
+  };
 
   const startRecording = async () => {
     setFinalTranscript("");
-setInterimTranscript("");
+    setInterimTranscript("");
 
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.close(1000, "Restart session");
+    }
+
+    finalReceivedRef.current = false;
     recordingStartTimeRef.current = Date.now();
-
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
       const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(2048, 1, 1);
+      const processor = audioContext.createScriptProcessor(256, 1, 1);
+
       processor.onaudioprocess = (event) => {
-  const inputData = event.inputBuffer.getChannelData(0);
+        const inputData = event.inputBuffer.getChannelData(0);
+        const buffer = new Int16Array(inputData.length);
 
-  // DEBUG LOG
-  console.log("Audio chunk size:", inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          buffer[i] = inputData[i] * 32767;
+        }
 
-  const buffer = new Int16Array(inputData.length);
-  for (let i = 0; i < inputData.length; i++) {
-    buffer[i] = inputData[i] * 32767;
-  }
-
-  if (
-  socketRef.current &&
-  socketRef.current.readyState === WebSocket.OPEN
-) {
-  socketRef.current.send(buffer);
-} else {
-  // 🔥 Buffer audio until socket connects
-  audioBufferQueue.current.push(buffer);
-}
-
-
-};
+        if (socketRef.current?.readyState === WebSocket.OPEN) {
+          socketRef.current.send(buffer);
+        } else {
+          audioBufferQueue.current.push(buffer);
+        }
+      };
 
       source.connect(processor);
       processor.connect(audioContext.destination);
@@ -74,204 +67,143 @@ setInterimTranscript("");
       inputRef.current = source;
 
       const socket = new WebSocket(
-  "wss://api.deepgram.com/v1/listen" +
-    "?model=nova-2" +
-    "&language=en-US" +
-    "&punctuate=true" +
-    "&interim_results=true" +
-    "&encoding=linear16" +
-    "&sample_rate=16000",
-  ["token", DEEPGRAM_API_KEY]
-);
-
-
-
+        "wss://api.deepgram.com/v1/listen" +
+          "?model=nova-2" +
+          "&language=en-US" +
+          "&punctuate=true" +
+          "&interim_results=true" +
+          "&encoding=linear16" +
+          "&sample_rate=16000",
+        ["token", DEEPGRAM_API_KEY]
+      );
 
       socket.onopen = () => {
-        console.log("Deepgram connected");
-
-        // 🔥 Send buffered audio first
-  audioBufferQueue.current.forEach((chunk) => {
-    socket.send(chunk);
-  });
-
-  // Clear buffer after flush
-  audioBufferQueue.current = [];
+        audioBufferQueue.current.forEach((c) => socket.send(c));
+        audioBufferQueue.current = [];
+        console.log("Deepgram connected + Grace mode + Interim persistence");
       };
 
       socket.onmessage = (message) => {
-  const data = JSON.parse(message.data);
+        const data = JSON.parse(message.data);
+        if (!data.channel) return;
 
-  if (!data.channel) return;
+        const alternative = data.channel.alternatives[0];
+        const text = alternative.transcript;
+        const isFinal = data.is_final;
 
-  const alternative = data.channel.alternatives[0];
-  const transcriptText = alternative.transcript;
-  const isFinal = data.is_final === true;
+        if (!text) return;
 
-  if (!transcriptText) return;
+        if (!isFinal) {
+          // KEEP interim visible even after release
+          setInterimTranscript(text);
+        }
 
-  if (isFinal) {
-    // ✅ Commit final text
-    setFinalTranscript((prev) => prev + " " + transcriptText);
-    setInterimTranscript(""); // clear interim
-  } else {
-    // ✏️ Show live interim text
-    setInterimTranscript(transcriptText);
-  }
-};
+        if (isFinal) {
+          finalReceivedRef.current = true;
+          setFinalTranscript((prev) => (prev + " " + text).trim());
+          setInterimTranscript("");
+        }
+      };
 
-
-
-     socket.onerror = (event) => {
-  console.error("Deepgram WebSocket error event:", event);
-};
-
-socket.onclose = (event) => {
-  console.error("Deepgram WebSocket closed:", event);
-};
-
+      socket.onerror = (e) => console.error("Deepgram WS error:", e);
+      socket.onclose = (e) => console.log("Deepgram closed:", e.code);
 
       socketRef.current = socket;
       setIsRecording(true);
     } catch (err) {
-  // Log full error only for developers
-  console.error("Start recording failed:", err);
-
-  // Show clean message only once to the user
-  alert(
-    "Microphone access failed. Please allow microphone permission and try again."
-  );
-}
-
+      console.error("Mic access failed:", err);
+      alert("Microphone access denied.");
+    }
   };
-
-
 
   const stopRecording = () => {
-  const elapsed =
-    Date.now() - recordingStartTimeRef.current;
-
-  // 🛑 If recording was too short, wait a bit
-  const delay =
-    elapsed < MIN_RECORDING_MS
-      ? MIN_RECORDING_MS - elapsed
-      : 0;
-
-  setTimeout(() => {
     setIsRecording(false);
 
-    processorRef.current?.disconnect();
-    inputRef.current?.disconnect();
-    audioContextRef.current?.close();
+    const socket = socketRef.current;
+    if (!socket) return;
 
-    // ✅ Proper Deepgram finalize
-    if (
-      socketRef.current &&
-      socketRef.current.readyState === WebSocket.OPEN
-    ) {
-      socketRef.current.send(
-        JSON.stringify({ type: "CloseStream" })
-      );
-    }
+    const recordingDuration = Date.now() - recordingStartTimeRef.current;
+    const grace = recordingDuration < GRACE_CAPTURE_MS ? GRACE_CAPTURE_MS : 0;
 
-    // Allow final transcript to arrive
+    console.log(`Applying grace: ${grace}ms`);
+
     setTimeout(() => {
-      socketRef.current?.close();
-    }, 350);
+      processorRef.current?.disconnect();
+      inputRef.current?.disconnect();
+      audioContextRef.current?.close();
+      audioBufferQueue.current = [];
 
-    audioBufferQueue.current = [];
-  }, delay);
-  setInterimTranscript("");
+      let waitForFinal = setInterval(() => {
+        if (finalReceivedRef.current || socket.readyState !== WebSocket.OPEN) {
+          clearInterval(waitForFinal);
 
-};
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.close(1000, "Normal close");
+          }
+        }
+      }, 45);
 
-
-
-useEffect(() => {
-  const handleKeyDown = (e) => {
-  const active = document.activeElement;
-
-  // If editing textarea, DO NOT trigger recording
-  if (active && active.tagName === "TEXTAREA") return;
-
-  if (e.code === "Space" && !isRecording) {
-    e.preventDefault(); // prevent page scroll
-    startRecording();
-  }
-};
-
-
-  const handleKeyUp = (e) => {
-  const active = document.activeElement;
-
-  // If editing textarea, DO NOT stop recording unnecessarily
-  if (active && active.tagName === "TEXTAREA") return;
-
-  if (e.code === "Space") {
-    stopRecording();
-  }
-};
-
-
-  window.addEventListener("keydown", handleKeyDown);
-  window.addEventListener("keyup", handleKeyUp);
-
-  return () => {
-    window.removeEventListener("keydown", handleKeyDown);
-    window.removeEventListener("keyup", handleKeyUp);
+      setTimeout(() => {
+        clearInterval(waitForFinal);
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close(1000, "Forced");
+        }
+      }, 1400);
+    }, grace);
   };
-}, [isRecording]);
+
+  useEffect(() => {
+    const down = (e) => {
+      if (document.activeElement.tagName === "TEXTAREA") return;
+      if (e.code === "Space" && !isRecording) {
+        e.preventDefault();
+        startRecording();
+      }
+    };
+
+    const up = (e) => {
+      if (document.activeElement.tagName === "TEXTAREA") return;
+      if (e.code === "Space") stopRecording();
+    };
+
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, [isRecording]);
 
   return (
-  <div className="app">
-    <div className="card">
-      <h1>Wispr Flow Lite</h1>
+    <div className="app">
+      <div className="card">
+        <h1>Wispr Flow Lite</h1>
 
-      <div className="tooltip-wrapper">
-  <button
-    className={isRecording ? "recording" : ""}
-    onMouseDown={startRecording}
-    onMouseUp={stopRecording}
-  >
-    {isRecording ? "Recording..." : "Hold to Talk"}
-  </button>
-  <span className="tooltip">Hold Spacebar to talk</span>
-</div>
+        <div className="tooltip-wrapper">
+          <button
+            className={isRecording ? "recording" : ""}
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+          >
+            {isRecording ? "Recording..." : "Hold to Talk"}
+          </button>
+          <span className="tooltip">Hold Spacebar to talk</span>
+        </div>
 
-{isRecording && (
-  <div className="waveform">
-    <span></span>
-    <span></span>
-    <span></span>
-    <span></span>
-    <span></span>
-  </div>
-)}
+        {/* Interim stays visible always */}
+        <textarea
+          value={`${finalTranscript} ${interimTranscript}`.trim()}
+          readOnly={false}
+          spellCheck={false}
+          onChange={(e) => setFinalTranscript(e.target.value)}
+          placeholder="Your speech will appear here..."
+        />
 
-
-    <textarea
-  value={isRecording ? `${finalTranscript} ${interimTranscript}` : finalTranscript}
-  readOnly={isRecording}
-  onChange={(e) => {
-    if (!isRecording) {
-      setFinalTranscript(e.target.value);
-    }
-  }}
-  placeholder="Your speech will appear here..."
-/>
-
-
-
-
-      <button onClick={copyToClipboard}>
-        Copy Transcript
-      </button>
+        <button onClick={copyToClipboard}>Copy Transcript</button>
+      </div>
     </div>
-  </div>
-);
-
-
-
+  );
 }
 
 export default App;
